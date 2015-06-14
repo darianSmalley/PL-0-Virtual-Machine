@@ -19,6 +19,8 @@
 
 static const int MAX_NAME_TABLE_SIZE = 256;
 static const int MAX_NUM_LEN = 5;
+static int lineNum = 0;
+static int error = 0;
 
 typedef enum {
     nulsym = 1, identsym = 2, numbersym = 3, plussym = 4, minussym = 5,
@@ -67,8 +69,7 @@ void fillSsym() {
     ssym[':'] = becomessym;
 }
 
-int isTokenDelim(char ch) {
-    //if ssym[ch] is not zero then ch is a special symbol
+int isSpecialSym(char ch) {
     if ( ssym[ch] != 0) {
         return 1;
     }
@@ -77,53 +78,128 @@ int isTokenDelim(char ch) {
     }
 }
 
-//C passes by value and makes a copy so that changs made in this functions local scope will not effect the caller
+int convert(char ch) {
+    return (ch - '0');
+}
+
+int intValueOf(char *s) {
+    int result = 0;
+    
+    while (*s != '\0') {
+        result = 10 * result + convert(*s);
+    }
+    
+    return result;
+}
+
 void processToken(int start,int end, char stream[] ) {
-    int i = 0;
-    int len = end - start;
-    char *token;
-    
-//    strncpy ( token, &stream[start], len );
-    memcpy( token, &stream[start], len);
-    token[len] = '\0';
-    
-    for (i = 0; i < norw; i++) {
-        //reserved word found
-        if ( strcmp ( word[i], token ) == 0) {
-            //DO STUFF!
-            namerecord_t r = { wsym[i], token, 0 /*convert digit to ascii value for this field*/, 0, 0 };
-            symbol_table[index_symbolTable] = r;
-            index_symbolTable++;
-            //print toke to various output files
+    if ( !isspace(stream[start])) {
+        int isReserve = 0;
+        int i = 0;
+        int len = end - start;
+        char *token = malloc((len + 1) * sizeof(char));
+        namerecord_t *r = malloc(sizeof(namerecord_t));
+        
+        memcpy( token, &stream[start], len);
+        token[len] = '\0';
+        
+        if ( isdigit(*token)) {
+            
+            while ( token[i] != '\0') {
+                if ( isalpha(token[i])) {
+                    error = 1;
+                    fprintf(stderr, "Lexical Error on line %d: Variable (%s) does not start with letter", lineNum, token);
+                    exit(1);
+                }
+                i++;
+            }
+            r->kind = numbersym;
+            r->name = token;
+            r->val = intValueOf(token);
+            
+            if ( r->val > imax) {
+                error = 1;
+                fprintf(stderr, "Lexiacl Error on line %d: Number (%s) is too long", lineNum, token);
+                exit(1);
+            }
+            
+            r->level = 0;
+            r->adr = 0;
         }
+        else if ( isalpha(*token) ) {
+            if ( len > cmax) {
+                error = 1;
+                fprintf(stderr, "Lexical Error on line %d: Identifier (%s) too long", lineNum, token);
+                exit(1);
+            }
+            
+            for (i = 0; i < norw; i++) {
+                if ( strcmp ( word[i], token ) == 0) {
+                    r->kind = wsym[i];
+                    r->name = token;
+                    r->val = 0;
+                    r->level = 0;
+                    r->adr = 0;
+                    isReserve = 1;
+                    break;
+                }
+            }
+            
+            if ( !isReserve ) {
+                r->kind = identsym;
+                r->name = token;
+                r->val = 0;
+                r->level = 0;
+                r->adr = 0;
+            }
+            
+        }
+        
+        symbol_table[index_symbolTable] = *r;
+        index_symbolTable++;
     }
     
 }
 
-void processSym(int j, char stream[]) {
+int processSym(int j, char stream[]) {
     char sym =  stream[j];
     char nextSym = stream[j + 1];
     char* symbol = 0;
-    
-    if ( sym == '/' && nextSym == '*') {
-        //comment check
-    }
-    else if (sym == ':' && nextSym == '=') {
-        //becomes
+    namerecord_t *r = malloc(sizeof(namerecord_t));
+    int two_character_sym = 0;
+
+    if ( (sym == ':' && nextSym == '=') || (sym == '<' && nextSym == '>') ) {
         symbol = malloc( 3 * sizeof(char));
         symbol[0] = sym;
         symbol[1] = nextSym;
         symbol[2] = '\0';
+        r->kind = (sym == ':') ? ssym[sym] : ssym['#'];
+        r->name = symbol;
+        r->val = 0;
+        r->level = 0;
+        r->adr = 0;
+        
+        two_character_sym = 1;
+    }
+    else if ( sym == ':' && nextSym != '=') {
+        error = 1;
+        fprintf(stderr, "Lexical Error on line %d: Invalid Symbol (%c%c) ", lineNum, sym, nextSym);
+        exit(1);
     }
     else {
         symbol = malloc (2*sizeof(char));
         symbol[0] = sym;
         symbol[1] = '\0';
+        r->kind = ssym[sym];
+        r->name = symbol;
+        r->val = 0;
+        r->level = 0;
+        r->adr = 0;
     }
  
-    
-    /*TODO: check for comment and becomes*/
-    namerecord_t r = { ssym[sym], &sym, 0 /*convert digit to ascii value for this field*/, 0, 0 };
+    symbol_table[index_symbolTable] = *r;
+    index_symbolTable++;
+    return two_character_sym;
 }
 
 void tokenizeInput(char inputStream[]) {
@@ -131,48 +207,74 @@ void tokenizeInput(char inputStream[]) {
     int j = 0; //token end index
     int ch = 0;
     
-    /*
-     TODO:
-     two indicies, one points to start of current token substring, the other points to the end.
-     iterate through input until a token delim is found.
-     send token to be processed.
-     */
-    
     /*tokens are seperated by either whitespace or special symbols and operators*/
-    while ( (ch = inputStream[j]) != EOF) {
-        //ch is whitespace
+    while ( (ch = inputStream[j]) != '\0') {
         if ( isspace(ch) != 0 ) {
             processToken(i,j,inputStream);
-            //print white space to files using j
-            i = j + 1;
             j++;
-        }
-        //ch is special symbol
-        else if ( isTokenDelim(ch) ) {
-            processToken(i,j,inputStream);
-            //process special sym. handle comments and becomes
-            processSym(j, inputStream);
-            //print symbol to files using j
+            i = j;
             
-            //increment i and j to next character in stream
-            i = j + 1;
-            j++;
+            if ( ch == '\n') {
+                lineNum++;
+            }
         }
-        //ch is the next character in a token
+        else if ( isSpecialSym(ch) ) {
+            processToken(i,j,inputStream);
+
+            if ( processSym(j, inputStream) ) {
+                //two chracter symbol
+                j = j + 2;
+                i = j;
+            } else {
+                j++;
+                i = j;
+            }
+
+        }
         else {
-            //dont forget the error checking, damnit
             j++;
         }
     }
 }
 
 char* fillInputStream(FILE* file) {
-    static char inputStream[267];
     int c;
     int i = 0;
+    int commentFlag = 0;
+    char previous = 0;
+    fseek(file, 0, SEEK_END);
+    long fsize = ftell(file);
+    fseek(file, 0, SEEK_SET);
+    
+    char *inputStream = malloc(fsize + 1);
     
     while ((c = fgetc(file)) != EOF) {
+        if ( i > 1) {
+            previous = inputStream [i - 1];
+        }
+        
+        if ( c == '*' && previous == '/' && commentFlag == 0) {
+            commentFlag = 1;
+            inputStream[ i - 1] = ' ';
+        }
+        
+        if ( commentFlag ) {
+            if ( c == '/' && previous == '*') {
+                commentFlag = 0;
+            }
+            
+            c = ' ';
+        }
+        
         inputStream[i] = c;
+        i++;
+    }
+    
+    inputStream[i] = '\0';
+    
+    if ( commentFlag ) {
+        error = 1;
+        fprintf(stderr, "Lexical Error: Invalid Symbol - comment is not closed");
     }
     
     return inputStream;
@@ -189,14 +291,59 @@ FILE* openFile(char* fileName) {
     return file;
 }
 
+void printCleanInput(char* source) {
+    FILE* out = fopen("cleaninput.txt", "w");
+    fwrite(source, sizeof(char), strlen(source), out);
+    fclose(out);
+}
+
+void printLexemeData() {
+    FILE* lexemeTable = fopen("lexemeTable.txt", "w");
+    FILE *lexemeList = fopen("lexemeList.txt", "w");
+    namerecord_t r;
+    int i = 0;
+    
+    fprintf(lexemeTable, "%-15s %-15s\n", "lexeme", "token type");
+    
+    for( i = 0; i < index_symbolTable; i++) {
+        r = symbol_table[i];
+        
+        fprintf(lexemeTable, "%-15s %-15d\n", r.name, r.kind);
+        
+        if ( r.kind == 2)
+            fprintf(lexemeList, "%d %s",r.kind, r.name);
+        else
+            fprintf(lexemeList, "%d",r.kind);
+    }
+    
+    fclose(lexemeTable);
+    fclose(lexemeList);
+}
+
+void freeTable() {
+    
+    int i = 0;
+    while ( i < index_symbolTable ) {
+        free(symbol_table[i].name);
+    }
+    
+    free(symbol_table);
+}
+
 int main(int argc, const char * argv[]) {
     FILE *file = openFile("input.txt");
     
     fillSsym();
     
     char* inputStream = fillInputStream(file);
+    
+    printCleanInput(inputStream);
 
     fclose(file);
     
     tokenizeInput(inputStream);
+    
+    printLexemeData();
+
+    freeTable();
 }
