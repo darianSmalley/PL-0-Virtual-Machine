@@ -86,7 +86,6 @@ int intValueOf(char *s) {
     int result = 0;
     
     while (*s != '\0') {
-        printf("%d\n", result);
         result = 10 * result + convert(*s);
         s++;
     }
@@ -95,9 +94,7 @@ int intValueOf(char *s) {
 }
 
 void processToken(int start,int end, char stream[] ) {
-//    printf("process token--------------------------\n");
     if ( !isspace(stream[start])) {
-        printf("token NOT space\n");
         int isReserve = 0;
         int i = 0;
         int len = end - start;
@@ -106,9 +103,9 @@ void processToken(int start,int end, char stream[] ) {
         
         memcpy( token, &stream[start], len);
         token[len] = '\0';
-        printf("Token = %s\n", token);
+
         if ( isdigit(*token)) {
-            printf("token is digit\n");
+
             while ( token[i] != '\0') {
                 if ( isalpha(token[i])) {
                     error = 1;
@@ -159,16 +156,12 @@ void processToken(int start,int end, char stream[] ) {
             
         }
         
-        if ( r->kind == 0)
-            printf("this symbol");
         symbol_table[index_symbolTable] = *r;
         index_symbolTable++;
     }
-    printf("end of processToken()------------------\n");
 }
 
 int processSym(int j, char stream[]) {
-    printf("in processSym---------------------\n");
     char sym =  stream[j];
     char nextSym = stream[j + 1];
     char* symbol = 0;
@@ -197,18 +190,16 @@ int processSym(int j, char stream[]) {
         symbol = malloc (2*sizeof(char));
         symbol[0] = sym;
         symbol[1] = '\0';
-                printf("symbol %s\n", symbol);
         r->kind = ssym[sym];
         r->name = symbol;
         r->val = 0;
         r->level = 0;
         r->adr = 0;
     }
-    if ( r->kind == 0)
-        printf("this symbol");
+
     symbol_table[index_symbolTable] = *r;
     index_symbolTable++;
-    printf("END PROCESS SYM--------\n");
+
     return two_character_sym;
 }
 
@@ -219,7 +210,7 @@ void tokenizeInput(char inputStream[]) {
     
     /*tokens are seperated by either whitespace or special symbols and operators*/
     while ( (ch = inputStream[j]) != '\0') {
-        printf("current char: '%c'\n", ch);
+
         if ( isspace(ch) != 0 ) {
 
             processToken(i,j,inputStream);
@@ -261,7 +252,6 @@ char* fillInputStream(FILE* file) {
     
     while ((c = fgetc(file)) != EOF) {
         inputStream[i] = c;
-//        printf("fillInputStream: c = %c\n", c);
         i++;
     }
     
@@ -287,14 +277,11 @@ char* cleanStream(char* inputStream) {
     int commentFlag = 0;
     
     while ( (ch = inputStream[i]) != '\0') {
-//        printf("cleanStream: ch =  %c\n", ch);
         if ( ch == '/' && inputStream[i + 1] != '\0' && inputStream[i + 1] == '*') {
-//            printf("if 1: ch = %c next char = %c", ch, inputStream[i + 1]);
             commentFlag = 1;
         }
         
         if (commentFlag && ch == '*' && inputStream[i + 1] != '\0' && inputStream[i + 1] == '/') {
-//            printf("if 2: ch = %c next char = %c", ch, inputStream[i + 1]);
             inputStream[i] = ' ';
             inputStream[i + 1] = ' ';
             i++;
@@ -308,7 +295,6 @@ char* cleanStream(char* inputStream) {
         i++;
     }
     
-//    printf("\nSTART INPUT STREAM\n%s\n\n", inputStream);
     return inputStream;
 }
 
@@ -344,8 +330,10 @@ void printLexemeData() {
 void freeTable() {
     
     int i = 0;
-    while ( i < index_symbolTable ) {
+    while ( i < index_symbolTable -1 ) {
+        printf(" i = %d\n", i);
         free(symbol_table[i].name);
+        i++;
     }
     
     free(symbol_table);
@@ -355,17 +343,18 @@ int main(int argc, const char * argv[]) {
     FILE *file = openFile("input.txt");
     
     fillSsym();
-    printf("filling inputStream:\n");
+
     char* inputStream = fillInputStream(file);
+    
     inputStream = cleanStream(inputStream);
-    printf("printing cleaned stream to file...\n");
+
     printCleanInput(inputStream);
 
     fclose(file);
-    printf("tokenize!\n");
+
     tokenizeInput(inputStream);
-    printf("printing all that work...");
+
     printLexemeData();
-    printf("Done.\nFreeing the table.");
+
     freeTable();
 }
