@@ -333,16 +333,13 @@ void printLexemeData() {
 }
 
 void freeTable() {
-    
     int i = 0;
-//    while ( i < index_symbolTable -1 ) {
-//        printf(" i = %d\n", i);
-//        free(symbol_table[i].name);
-//        i++;
-//    }
-    free(symbol_table[i].name);
-    free(&symbol_table[i]);
-//    free(symbol_table);
+
+    while ( i < index_symbolTable ) {
+        free(symbol_table[i].name);
+        i++;
+    }
+
 }
 
 int main(int argc, const char * argv[]) {
