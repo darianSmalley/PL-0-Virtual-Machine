@@ -86,14 +86,18 @@ int intValueOf(char *s) {
     int result = 0;
     
     while (*s != '\0') {
+        printf("%d\n", result);
         result = 10 * result + convert(*s);
+        s++;
     }
     
     return result;
 }
 
 void processToken(int start,int end, char stream[] ) {
+//    printf("process token--------------------------\n");
     if ( !isspace(stream[start])) {
+        printf("token NOT space\n");
         int isReserve = 0;
         int i = 0;
         int len = end - start;
@@ -102,9 +106,9 @@ void processToken(int start,int end, char stream[] ) {
         
         memcpy( token, &stream[start], len);
         token[len] = '\0';
-        
+        printf("Token = %s\n", token);
         if ( isdigit(*token)) {
-            
+            printf("token is digit\n");
             while ( token[i] != '\0') {
                 if ( isalpha(token[i])) {
                     error = 1;
@@ -155,19 +159,22 @@ void processToken(int start,int end, char stream[] ) {
             
         }
         
+        if ( r->kind == 0)
+            printf("this symbol");
         symbol_table[index_symbolTable] = *r;
         index_symbolTable++;
     }
-    
+    printf("end of processToken()------------------\n");
 }
 
 int processSym(int j, char stream[]) {
+    printf("in processSym---------------------\n");
     char sym =  stream[j];
     char nextSym = stream[j + 1];
     char* symbol = 0;
     namerecord_t *r = malloc(sizeof(namerecord_t));
     int two_character_sym = 0;
-
+    
     if ( (sym == ':' && nextSym == '=') || (sym == '<' && nextSym == '>') ) {
         symbol = malloc( 3 * sizeof(char));
         symbol[0] = sym;
@@ -190,15 +197,18 @@ int processSym(int j, char stream[]) {
         symbol = malloc (2*sizeof(char));
         symbol[0] = sym;
         symbol[1] = '\0';
+                printf("symbol %s\n", symbol);
         r->kind = ssym[sym];
         r->name = symbol;
         r->val = 0;
         r->level = 0;
         r->adr = 0;
     }
- 
+    if ( r->kind == 0)
+        printf("this symbol");
     symbol_table[index_symbolTable] = *r;
     index_symbolTable++;
+    printf("END PROCESS SYM--------\n");
     return two_character_sym;
 }
 
@@ -209,7 +219,9 @@ void tokenizeInput(char inputStream[]) {
     
     /*tokens are seperated by either whitespace or special symbols and operators*/
     while ( (ch = inputStream[j]) != '\0') {
+        printf("current char: '%c'\n", ch);
         if ( isspace(ch) != 0 ) {
+
             processToken(i,j,inputStream);
             j++;
             i = j;
@@ -219,7 +231,8 @@ void tokenizeInput(char inputStream[]) {
             }
         }
         else if ( isSpecialSym(ch) ) {
-            processToken(i,j,inputStream);
+            if ( i != j)
+                processToken(i,j,inputStream);
 
             if ( processSym(j, inputStream) ) {
                 //two chracter symbol
@@ -240,8 +253,6 @@ void tokenizeInput(char inputStream[]) {
 char* fillInputStream(FILE* file) {
     int c;
     int i = 0;
-    int commentFlag = 0;
-    char previous = 0;
     fseek(file, 0, SEEK_END);
     long fsize = ftell(file);
     fseek(file, 0, SEEK_SET);
@@ -249,33 +260,12 @@ char* fillInputStream(FILE* file) {
     char *inputStream = malloc(fsize + 1);
     
     while ((c = fgetc(file)) != EOF) {
-        if ( i > 1) {
-            previous = inputStream [i - 1];
-        }
-        
-        if ( c == '*' && previous == '/' && commentFlag == 0) {
-            commentFlag = 1;
-            inputStream[ i - 1] = ' ';
-        }
-        
-        if ( commentFlag ) {
-            if ( c == '/' && previous == '*') {
-                commentFlag = 0;
-            }
-            
-            c = ' ';
-        }
-        
         inputStream[i] = c;
+//        printf("fillInputStream: c = %c\n", c);
         i++;
     }
     
     inputStream[i] = '\0';
-    
-    if ( commentFlag ) {
-        error = 1;
-        fprintf(stderr, "Lexical Error: Invalid Symbol - comment is not closed");
-    }
     
     return inputStream;
 }
@@ -289,6 +279,37 @@ FILE* openFile(char* fileName) {
     }
     
     return file;
+}
+
+char* cleanStream(char* inputStream) {
+    char ch = 0;
+    int i = 0;
+    int commentFlag = 0;
+    
+    while ( (ch = inputStream[i]) != '\0') {
+//        printf("cleanStream: ch =  %c\n", ch);
+        if ( ch == '/' && inputStream[i + 1] != '\0' && inputStream[i + 1] == '*') {
+//            printf("if 1: ch = %c next char = %c", ch, inputStream[i + 1]);
+            commentFlag = 1;
+        }
+        
+        if (commentFlag && ch == '*' && inputStream[i + 1] != '\0' && inputStream[i + 1] == '/') {
+//            printf("if 2: ch = %c next char = %c", ch, inputStream[i + 1]);
+            inputStream[i] = ' ';
+            inputStream[i + 1] = ' ';
+            i++;
+            commentFlag = 0;
+        }
+        
+        if( commentFlag) {
+            inputStream[i] = ' ';
+        }
+        
+        i++;
+    }
+    
+//    printf("\nSTART INPUT STREAM\n%s\n\n", inputStream);
+    return inputStream;
 }
 
 void printCleanInput(char* source) {
@@ -311,9 +332,9 @@ void printLexemeData() {
         fprintf(lexemeTable, "%-15s %-15d\n", r.name, r.kind);
         
         if ( r.kind == 2)
-            fprintf(lexemeList, "%d %s",r.kind, r.name);
+            fprintf(lexemeList, "%d %s ",r.kind, r.name);
         else
-            fprintf(lexemeList, "%d",r.kind);
+            fprintf(lexemeList, "%d ",r.kind);
     }
     
     fclose(lexemeTable);
@@ -334,16 +355,17 @@ int main(int argc, const char * argv[]) {
     FILE *file = openFile("input.txt");
     
     fillSsym();
-    
+    printf("filling inputStream:\n");
     char* inputStream = fillInputStream(file);
-    
+    inputStream = cleanStream(inputStream);
+    printf("printing cleaned stream to file...\n");
     printCleanInput(inputStream);
 
     fclose(file);
-    
+    printf("tokenize!\n");
     tokenizeInput(inputStream);
-    
+    printf("printing all that work...");
     printLexemeData();
-
+    printf("Done.\nFreeing the table.");
     freeTable();
 }
