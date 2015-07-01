@@ -342,7 +342,7 @@ void freeTable() {
 
 }
 
-int main(int argc, const char * argv[]) {
+int startScanner(int argc, const char * argv[]) {
     FILE *file = openFile("input.txt");
     
     fillSsym();
@@ -360,4 +360,6 @@ int main(int argc, const char * argv[]) {
     printLexemeData();
 
     freeTable();
+    
+    return 0;
 }

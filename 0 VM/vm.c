@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 
 typedef struct Instruction{
     int op; /*opcode*/
@@ -17,9 +18,9 @@ typedef struct Instruction{
     int line_number; //line number
 } IR;
 
-static const int MAX_STACK_HEIGHT = 100;
-static const int MAX_CODE_LENGTH = 500;
-static const int MAX_LEXI_LEVELS = 3;
+#define MAX_STACK_HEIGHT 100
+#define MAX_CODE_LENGTH 500
+#define MAX_LEXI_LEVELS 4
 
 int CURRENT_CODE_LENGTH;
 const char *opCodes[9] = {"LIT", "OPR", "LOD", "STO", "CAL", "INC","JMP","JPC","SIO"};
@@ -199,7 +200,7 @@ void op09_SIO (int l, int m) {
 void (*op_fp[9]) (int lexi, int mod) = {op01_LIT, op02_OPR, op03_LOD, op04_STO, op05_CAL, op06_INC, op07_JMP, op08_JPC, op09_SIO};
 
 void generateInst(IR *inst, char *terms[], int lineNumber) {
-//    printf("%s", "converting from char to int...\n");
+//    printf("converting from char to int...\n");
     int i = 0;
 
     inst->op = atoi(terms[i++]);
@@ -208,54 +209,94 @@ void generateInst(IR *inst, char *terms[], int lineNumber) {
     inst->line_number = lineNumber;
 }
 
-void printLine(char line[]) {
+char* fillInputStream(FILE* file) {
+    int c;
     int i = 0;
-    printf("Print Line: ");
-    while (line[i] != '\0') {
-        printf("%c", line[i]);
-        i++;
-    }
-}
-
-void splitLine(char *line, char *terms[]) {
-//    printf("clearLine line: %s", line);
-    char *tmp = strdup(line);
-    char *token;
-    int i = 0;
+    fseek(file, 0, SEEK_END);
+    long fsize = ftell(file);
+    fseek(file, 0, SEEK_SET);
     
-    while(i < 3 ) {
-        token = strsep(&tmp, " ") ;
-//        printf ("\n line: %s\n token: %s\n", tmp, token);
-        terms[i] = token;
+    char *inputStream = malloc(fsize + 1);
+    
+    while ((c = fgetc(file)) != EOF) {
+        inputStream[i] = c;
         i++;
     }
+    
+    inputStream[i] = '\0';
+    
+    return inputStream;
 }
 
 void fillCode (FILE *file) {
-    char line[8] ={0};
     int i = 0;
-    char *terms[3]={0};
+    char *terms[3] = {0};
+    int c = 0;
+    int j = 0;
+    int k = 0;
+    char *line = malloc ( 8 * sizeof(char));
     
-    while (fgets(line, sizeof(line), file) ) {
-//        printLine(line);
-        IR inst;
+    char* inputStream = fillInputStream(file);
+    size_t size = strlen(inputStream);
+    
+    for (k = 0; k < size; k++) {
+        c = inputStream[k];
         
-        //split input line using space a delim
-        splitLine(line, terms);
+        if ( c == '\n' ) {
+            IR inst;
+            
+            line[j] = '\0';
+            char* tmp = strdup(line);
+            terms[0] = strsep(&tmp, " ");
+            terms[1] = strsep(&tmp, " ");
+            terms[2] = strsep(&tmp, " ");
+            
+            //generate instruction object using values in terms[]
+            generateInst(&inst, terms, i);
+            
+            //set current code index to new inst obj
+            code[i] = inst;
+            i++;
+            
+//            printf("%s\n", line);
+            
+            //clear line in memory
+            memset(line, 0, sizeof(*line));
+            j = 0;
+        }
+        else if ( (k == size - 1) && isdigit(c) ) {
+            line[j] = c;
+            line[j + 1] = '\0';
+            
+            char* tmp = strdup(line);
+            terms[0] = strsep(&tmp, " ");
+            terms[1] = strsep(&tmp, " ");
+            terms[2] = strsep(&tmp, " ");
+            
+            IR inst;
+            //generate instruction object using values in terms[]
+            generateInst(&inst, terms, i);
+            
+            //set current code index to new inst obj
+            code[i] = inst;
+            i++;
+            
+//            printf("%s\n", line);
+            
+            //clear line in memory
+            memset(line, 0, sizeof(*line));
+            j = 0;
+
+        }
+        else {
+            line[j] = c;
+            j++;
+        }
         
-        //generate instruction object using values in terms[]
-        generateInst(&inst, terms, i);
-        
-        //set current code index to new inst obj
-        code[i] = inst;
-        
-        //clear line in memory
-        memset(&line[0], 0, sizeof(line));
-        i++;
     }
     
     CURRENT_CODE_LENGTH = i;
-    stack[0] = (int) &code;
+//    puts("end of code fill\n");
 }
 
 void printCode(FILE *file) {
@@ -388,11 +429,9 @@ void execute() {
     updateStack_str();
 }
 
-int main(int argc, const char * argv[]) {
+int startVM(int argc, const char * argv[]) {
     
-    FILE *file = fopen("mcode.txt", "r" );
-    
-//   stack_str = malloc((MAX_STACK_HEIGHT + 100) * sizeof(char));
+    FILE *file = fopen("mcode2.txt", "r" );
     
     /* fopen returns 0, the NULL pointer, on failure */
     if ( file == 0 )
@@ -400,17 +439,17 @@ int main(int argc, const char * argv[]) {
         printf( "Could not open file\n" );
         exit(1);
     }
-
+    
     fillCode( file );
     fclose( file );
-    
+
     file = fopen("stacktrace.txt","w");
     
     if ( file == NULL) {
         printf("Could not open file\n");
         exit(1);
     }
-    
+
     printCode( file );
     
     fprintf(file, "Line  OP  L  M  pc  bp  sp     stack    \n");
@@ -418,13 +457,17 @@ int main(int argc, const char * argv[]) {
     fprintf(file, "Init Values:    0   1   0               \n");
     
     /*instruction cycle*/
-    
+
     //while instruction is not halt
     while ( halt == 0) {
+//        puts("fetch");
         fetch();
+//        puts("execute");
         execute();
+//        puts("printInstructionTrace");
         printInstructionTrace(file);
     }
     
     fclose( file );
+    return 0;
 }

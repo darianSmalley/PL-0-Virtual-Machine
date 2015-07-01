@@ -24,7 +24,7 @@ typedef enum {
     readsym = 32, elsesym = 33
 } token_type;
 
-int parse (char* fileName) {
+int startParser (char* fileName) {
     lexemeList = fillInputStream(fileName);
     
     PROGRAM();
@@ -36,7 +36,7 @@ void PROGRAM() {
     getToken();
     BLOCK();
     if (TOKEN != periodsym) {
-        puts("error");
+        puts("error 9: expected period symbol.");
         exit(1);
     }
 }
@@ -48,21 +48,21 @@ void BLOCK() {
             getToken();
             
             if (TOKEN != identsym) {
-                puts("error");
+                puts("error 4: expected identifier symbol.");
                 exit(1);
             }
             
             getToken();
             
             if (TOKEN != eqlsym) {
-                puts("error");
+                puts("error 3: expected equals symbol.");
                 exit(1);
             }
             
             getToken();
             
             if (TOKEN != numbersym) {
-                puts("error");
+                puts("error 2: '=' equal sym must be followed by a number.");
                 exit(1);
             }
         }
@@ -73,7 +73,7 @@ void BLOCK() {
             getToken();
             
             if( TOKEN != identsym ) {
-                puts("error");
+                puts("error 4: expected identifier symbol.");
                 exit(1);
             }
             
@@ -81,7 +81,7 @@ void BLOCK() {
         }
         
         if (TOKEN != semicolonsym) {
-            puts("error");
+            puts("error 5: expected semicolon symbol.");
             exit(1);
         }
         
@@ -92,14 +92,14 @@ void BLOCK() {
         getToken();
         
         if (TOKEN != identsym) {
-            puts("error");
+            puts("error 4: expected identifier symbol.");
             exit(1);
         }
         
         getToken();
         
         if (TOKEN != semicolonsym) {
-            puts("error");
+            puts("error 5: expected semicolon symbol");
             exit(1);
         }
         
@@ -108,7 +108,7 @@ void BLOCK() {
         BLOCK();
         
         if (TOKEN != semicolonsym) {
-            puts("error");
+            puts("error 5: expected semicolon symbol.");
             exit(1);
         }
     }
@@ -120,7 +120,7 @@ void STATEMENT() {
         getToken();
         
         if (TOKEN != becomessym) {
-            puts("error");
+            puts("error: expected become symbol.");
             exit(1);
         }
         
@@ -132,7 +132,7 @@ void STATEMENT() {
         getToken();
         
         if ( TOKEN != identsym) {
-            puts("error");
+            puts("error 14: call must be followed by an identifier.");
             exit(1);
         }
         
@@ -149,7 +149,7 @@ void STATEMENT() {
         }
         
         if ( TOKEN != endsym) {
-            puts("error");
+            puts("error: expected end symbol.");
             exit(1);
         }
         
@@ -161,7 +161,7 @@ void STATEMENT() {
         CONDITION();
         
         if (TOKEN != thensym ) {
-            puts("error");
+            puts("error 16: expected then symbol.");
             exit(1);
         }
         
@@ -173,7 +173,7 @@ void STATEMENT() {
         getToken();
         
         if ( TOKEN != dosym) {
-            puts("error");
+            puts("error 17: expected do symbol.");
             exit(1);
         }
         
@@ -183,20 +183,63 @@ void STATEMENT() {
     }
 }
 
-void EXPRESSION() {
-    
+void CONDITION() {
+    if (TOKEN == oddsym) {
+        getToken();
+        EXPRESSION();
+    }
+    else {
+        EXPRESSION();
+        
+        if (TOKEN != eqlsym  || TOKEN != nulsym /*<---- this is incorrect and needs to be fixed*/ || TOKEN != lessym || TOKEN != leqsym || TOKEN != gtrsym || TOKEN != geqsym) {
+            puts("error 20: expected relational operatior.");
+            exit(1);
+        }
+        
+        getToken();
+        
+        EXPRESSION();
+    }
 }
 
-void CONDITION() {
+void EXPRESSION() {
+    if (TOKEN == plussym || TOKEN == minussym ) {
+        getToken();
+        TERM();
+    }
     
+    while (TOKEN == plussym || TOKEN == minussym ) {
+        getToken();
+        TERM();
+    }
 }
 
 void TERM() {
+    FACTOR();
     
+    while (TOKEN == multsym || TOKEN == slashsym) {
+        getToken();
+        FACTOR();
+    }
 }
 
 void FACTOR() {
-    
+    if ( TOKEN == identsym ) {
+        getToken();
+    }
+    else if ( TOKEN == numbersym) {
+        getToken();
+    }
+    else if (TOKEN == lparentsym) {
+        getToken();
+        EXPRESSION();
+        
+        if (TOKEN != rparentsym) {
+            puts("error 22: expected rpartent symbol '}'.");
+            exit(1);
+        }
+        getToken();
+    }
 }
 
 FILE* openFile(char* fileName) {

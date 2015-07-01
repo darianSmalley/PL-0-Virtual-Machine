@@ -11,7 +11,7 @@
 
 #include <stdio.h>
 
-int parse(char* fileName);
+int startParser(char* fileName);
 FILE* openFile(char* fileName);
 char* fillInputStream(char* fileName);
 void getToken();
