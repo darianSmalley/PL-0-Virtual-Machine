@@ -1,365 +1,405 @@
-//
-//  scanner.c
-//  0 VM
-//
-//  Created by Darian Smalley on 6/3/15.
-//  Copyright (c) 2015 Darian Smalley. All rights reserved.
-//
-
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <stdlib.h>
 
-#define norw 15 /* number of reserved words */
-#define imax 32767 /* maximum integer value */
-#define cmax 11 /* maximum number of chars for idents */
-#define nestmax 5 /* maximum depth of block nesting */
-#define strmax 256 /* maximum length of strings */
+char *source_file_name = "input.txt";
+char *clean_input_name = "cleaninput.txt";
 
-static const int MAX_NAME_TABLE_SIZE = 256;
-static const int MAX_NUM_LEN = 5;
-static int lineNum = 1;
-static int error = 0;
+#define MAX_IDENTIFIER_LENGTH 11
+#define MAX_NUMBER_LENGTH 5
 
-typedef enum {
-    nulsym = 1, identsym = 2, numbersym = 3, plussym = 4, minussym = 5,
-    multsym = 6,  slashsym = 7, oddsym = 8, eqlsym = 9, neqsym = 10, lessym = 11, leqsym =12,
-    gtrsym = 13, geqsym = 14, lparentsym = 15, rparentsym = 16, commasym = 17, semicolonsym = 18,
-    periodsym = 19, becomessym = 20, beginsym = 21, endsym = 22, ifsym = 23, thensym = 24,
-    whilesym = 25, dosym = 26, callsym = 27, constsym = 28, varsym = 29, procsym = 30, writesym =31,
-    readsym = 32, elsesym = 33
-} token_type;
+//Prototypes
+int cleanFile(char *in_file_name);
 
-typedef struct {
-    int kind; /*const = 1, var = 2, proc = 3*/
-    char *name; /*name up to 11*/
-    int val; /*number (ASCII value)*/
-    int level; /*L level*/
-    int adr;   /*M address*/
-} namerecord_t;
-namerecord_t symbol_table[MAX_NAME_TABLE_SIZE];
-int index_symbolTable = 0;
+void stripExtraSpaces(char *str);
 
-/*list of reserved keywords*/
-char *word[] = {"null","begin","call","const","do","else","end","if","odd","procedure","read","then","var","while","write"};
+int removeComments(char *str);
 
-/*internal representation of reserved keywords*/
-int wsym[] = {nulsym, beginsym, callsym, constsym, dosym, elsesym, endsym, ifsym, oddsym, procsym, readsym, thensym, varsym, whilesym, writesym};
+int getLine(char *buffer, char *seek);
 
-/*list of special symbols*/
-int ssym[256] = {0};
+void lexicalParser(char *in_file_name, int printOption);
 
-void fillSsym() {
-    ssym['+'] = plussym;
-    ssym['-'] = minussym;
-    ssym['*'] = multsym;
-    ssym['/'] = slashsym;
-    ssym['('] = lparentsym;
-    ssym[')'] = rparentsym;
-    ssym['='] = eqlsym;
-    ssym[','] = commasym;
-    ssym['.'] = periodsym;
-    ssym['#'] = neqsym;
-    ssym['<'] = lessym;
-    ssym['>'] = gtrsym;
-    ssym['$'] = leqsym;
-    ssym['%'] = geqsym;
-    ssym[';'] = semicolonsym;
-    ssym[':'] = becomessym;
+
+// DFA
+//typedef enum {
+//    nulsym = 1, identsym, numbersym, plussym, minussym,
+//    multsym, slashsym, oddsym, eqsym, neqsym, lessym, leqsym,
+//    gtrsym, geqsym, lparentsym, rparentsym, commasym, semicolonsym,
+//    periodsym, becomessym, beginsym, endsym, ifsym, thensym,
+//    whilesym, dosym, callsym, constsym, varsym, procsym, writesym,
+//    readsym, elsesym
+//} token_type;
+
+struct {
+    token_type type;
+    char lexeme[12];
+} typedef token;
+
+int startScanner(int printOption)
+{
+    
+    cleanFile(source_file_name);
+    lexicalParser(clean_input_name, printOption);
+    if (printOption) puts("");
+    return 0;
 }
 
-int isSpecialSym(char ch) {
-    if ( ssym[ch] != 0) {
-        return 1;
-    }
-    else {
-        return 0;
-    }
-}
 
-int convert(char ch) {
-    return (ch - '0');
-}
-
-int intValueOf(char *s) {
-    int result = 0;
+/*
+ * Parses the file having name in_file_name
+ *
+ */
+void lexicalParser(char *in_file_name, int printOption)
+{
+    // Load file into memory store in string
+    FILE *f = fopen(in_file_name, "rb");
+    fseek(f, 0, SEEK_END);
+    long fsize = ftell(f);
+    fseek(f, 0, SEEK_SET);
     
-    while (*s != '\0') {
-        result = 10 * result + convert(*s);
-        s++;
-    }
+    char *string = malloc(fsize + 1);
+    fread(string, fsize, 1, f);
+    fclose(f);
     
-    return result;
-}
-
-void processToken(int start,int end, char stream[] ) {
-    if ( !isspace(stream[start])) {
-        int isReserve = 0;
-        int i = 0;
-        int len = end - start;
-        char *token = malloc((len + 1) * sizeof(char));
-        namerecord_t *r = malloc(sizeof(namerecord_t));
-        
-        memcpy( token, &stream[start], len);
-        token[len] = '\0';
-
-        if ( isdigit(*token)) {
-
-            while ( token[i] != '\0') {
-                if ( isalpha(token[i])) {
-                    error = 1;
-                    fprintf(stderr, "Lexical Error on line %d: Variable (%s) does not start with letter\n", lineNum, token);
-                    exit(1);
-                }
-                i++;
-            }
-            r->kind = numbersym;
-            r->name = token;
-            r->val = intValueOf(token);
-            
-            if ( r->val > imax) {
-                error = 1;
-                fprintf(stderr, "Lexiacl Error on line %d: Number (%s) is too long\n", lineNum, token);
-                exit(1);
-            }
-            
-            r->level = 0;
-            r->adr = 0;
-        }
-        else if ( isalpha(*token) ) {
-            if ( len > cmax) {
-                error = 1;
-                fprintf(stderr, "Lexical Error on line %d: Identifier (%s) too long\n", lineNum, token);
-                exit(1);
-            }
-            
-            for (i = 0; i < norw; i++) {
-                if ( strcmp ( word[i], token ) == 0) {
-                    r->kind = wsym[i];
-                    r->name = token;
-                    r->val = 0;
-                    r->level = 0;
-                    r->adr = 0;
-                    isReserve = 1;
-                    break;
-                }
-            }
-            
-            if ( !isReserve ) {
-                r->kind = identsym;
-                r->name = token;
-                r->val = 0;
-                r->level = 0;
-                r->adr = 0;
-            }
-            
-        }
-        
-        symbol_table[index_symbolTable] = *r;
-        index_symbolTable++;
-    }
-}
-
-int processSym(int j, char stream[]) {
-    char sym =  stream[j];
-    char nextSym = stream[j + 1];
-    char* symbol = 0;
-    namerecord_t *r = malloc(sizeof(namerecord_t));
-    int two_character_sym = 0;
+    string[fsize] = 0; // terminate string
     
-    if ( (sym == ':' && nextSym == '=') || (sym == '<' && nextSym == '>') ) {
-        symbol = malloc( 3 * sizeof(char));
-        symbol[0] = sym;
-        symbol[1] = nextSym;
-        symbol[2] = '\0';
-        r->kind = (sym == ':') ? ssym[sym] : ssym['#'];
-        r->name = symbol;
-        r->val = 0;
-        r->level = 0;
-        r->adr = 0;
-        
-        two_character_sym = 1;
-    }
-    else if ( sym == ':' && nextSym != '=') {
-        error = 1;
-        fprintf(stderr, "Lexical Error on line %d: Invalid Symbol (%c%c)\n", lineNum, sym, nextSym);
-        exit(1);
-    }
-    else {
-        symbol = malloc (2*sizeof(char));
-        symbol[0] = sym;
-        symbol[1] = '\0';
-        r->kind = ssym[sym];
-        r->name = symbol;
-        r->val = 0;
-        r->level = 0;
-        r->adr = 0;
-    }
-
-    symbol_table[index_symbolTable] = *r;
-    index_symbolTable++;
-
-    return two_character_sym;
-}
-
-void tokenizeInput(char inputStream[]) {
-    int i = 0; //token being index
-    int j = 0; //token end index
-    int ch = 0;
+    stripExtraSpaces(string);   // Remove spaces that dont contribute
     
-    /*tokens are seperated by either whitespace or special symbols and operators*/
-    while ( (ch = inputStream[j]) != '\0') {
-
-        if ( isspace(ch) != 0 ) {
-
-            processToken(i,j,inputStream);
-            j++;
-            i = j;
-            
-            if ( ch == '\n') {
-                lineNum++;
-            }
-        }
-        else if ( isSpecialSym(ch) ) {
-            if ( i != j)
-                processToken(i,j,inputStream);
-
-            if ( processSym(j, inputStream) ) {
-                //two chracter symbol
-                j = j + 2;
-                i = j;
-            } else {
-                j++;
-                i = j;
-            }
-
-        }
-        else {
-            j++;
-        }
-    }
-}
-
-char* fillInputStream(FILE* file) {
-    int c;
-    int i = 0;
-    fseek(file, 0, SEEK_END);
-    long fsize = ftell(file);
-    fseek(file, 0, SEEK_SET);
+    FILE *lexemeTable = fopen("lexemetable.txt", "w");
+    FILE *lexemeList = fopen("lexemelist.txt", "w");
     
-    char *inputStream = malloc(fsize + 1);
-    
-    while ((c = fgetc(file)) != EOF) {
-        inputStream[i] = c;
-        i++;
-    }
-    
-    inputStream[i] = '\0';
-    
-    return inputStream;
-}
-
-FILE* openFile(char* fileName) {
-    FILE* file;
-    
-    if (!(file = fopen(fileName, "r" ))) {
-        perror("input.txt");
-        exit(1);
-    }
-    
-    return file;
-}
-
-char* cleanStream(char* inputStream) {
-    char ch = 0;
-    int i = 0;
-    int commentFlag = 0;
-    
-    while ( (ch = inputStream[i]) != '\0') {
-        if ( ch == '/' && inputStream[i + 1] != '\0' && inputStream[i + 1] == '*') {
-            commentFlag = 1;
-        }
-        
-        if (commentFlag && ch == '*' && inputStream[i + 1] != '\0' && inputStream[i + 1] == '/') {
-            inputStream[i] = ' ';
-            inputStream[i + 1] = ' ';
-            i++;
-            commentFlag = 0;
-        }
-        
-        if( commentFlag) {
-            inputStream[i] = ' ';
-        }
-        
-        i++;
-    }
-    
-    if ( commentFlag ) {
-        error = 1;
-        fprintf(stderr, "Lexical Error comment never closed\n");
-    }
-    
-    return inputStream;
-}
-
-void printCleanInput(char* source) {
-    FILE* out = fopen("cleaninput.txt", "w");
-    fwrite(source, sizeof(char), strlen(source), out);
-    fclose(out);
-}
-
-void printLexemeData() {
-    FILE* lexemeTable = fopen("lexemeTable.txt", "w");
-    FILE *lexemeList = fopen("lexemeList.txt", "w");
-    namerecord_t r;
-    int i = 0;
     
     fprintf(lexemeTable, "%-15s %-15s\n", "lexeme", "token type");
     
-    for( i = 0; i < index_symbolTable; i++) {
-        r = symbol_table[i];
+    char *cur_char;     // This will be our pointer that steps through stirng
+    cur_char = string;
+    int fault_detected = 0; // Flag for if a fault detected. If fault dected parsing halts
+    int line_count = 1;
+    token tok;
+    while (*cur_char != '\0')
+    {
+        memset(&tok, 0, sizeof(token)); // Reset token data to 0s
         
-        fprintf(lexemeTable, "%-15s %-15d\n", r.name, r.kind);
-        
-        if ( r.kind == 2)
-            fprintf(lexemeList, "%d %s ",r.kind, r.name);
+        if (isalpha(*cur_char))  // Ident or Reserved Word
+        {
+            tok.type = identsym;
+            tok.lexeme[strlen(tok.lexeme)] = *cur_char;
+            cur_char++;
+            while (*cur_char != '\0')
+            {
+                if (isalnum(*cur_char))  // It is ok for identfiers to have numbers
+                {
+                    if (strlen(tok.lexeme) >= MAX_IDENTIFIER_LENGTH)
+                    {
+                        fprintf(stderr, "Name too long\n");
+                        fault_detected = 1;
+                        break;
+                    }
+                    else
+                    {
+                        tok.lexeme[strlen(tok.lexeme)] = *cur_char;
+                        cur_char++;
+                    }
+                }
+                else
+                {
+                    break;
+                }
+                
+            }   // End of identifier loop
+            
+            
+            // Compare to reserved words
+            if (strcmp("null", tok.lexeme) == 0) tok.type = nulsym;
+            else if (strcmp("const", tok.lexeme) == 0) tok.type = constsym;
+            else if (strcmp("var", tok.lexeme) == 0) tok.type = varsym;
+            else if (strcmp("procedure", tok.lexeme) == 0) tok.type = procsym;
+            else if (strcmp("call", tok.lexeme) == 0) tok.type = callsym;
+            else if (strcmp("begin", tok.lexeme) == 0) tok.type = beginsym;
+            else if (strcmp("end", tok.lexeme) == 0) tok.type = endsym;
+            else if (strcmp("if", tok.lexeme) == 0) tok.type = ifsym;
+            else if (strcmp("then", tok.lexeme) == 0) tok.type = thensym;
+            else if (strcmp("else", tok.lexeme) == 0) tok.type = elsesym;
+            else if (strcmp("while", tok.lexeme) == 0) tok.type = whilesym;
+            else if (strcmp("do", tok.lexeme) == 0) tok.type = dosym;
+            else if (strcmp("read", tok.lexeme) == 0) tok.type = readsym;
+            else if (strcmp("write", tok.lexeme) == 0) tok.type = writesym;
+            else if (strcmp("odd", tok.lexeme) == 0) tok.type = oddsym;
+            
+            
+        }
+        else if (isdigit(*cur_char))
+        {
+            tok.type = numbersym;   // Assume number
+            tok.lexeme[strlen(tok.lexeme)] = *cur_char;
+            cur_char++;
+            while (*cur_char != '\0')
+            {
+                if (isdigit(*cur_char))
+                {
+                    if (strlen(tok.lexeme) >= MAX_NUMBER_LENGTH)
+                    {
+                        fprintf(stderr, "Name too long\n");
+                        fault_detected = 1;
+                        break;
+                    }
+                    else
+                    {
+                        tok.lexeme[strlen(tok.lexeme)] = *cur_char;
+                        cur_char++;
+                    }
+                }
+                else if (isalpha(*cur_char)) // This is a invalid identifier
+                {
+                    fprintf(stderr, "Variable does not start with a letter\n");
+                    fault_detected = 1;
+                    break;
+                }
+                else
+                {
+                    break;
+                }
+            }
+        }
         else
-            fprintf(lexemeList, "%d ",r.kind);
+        {
+            tok.lexeme[strlen(tok.lexeme)] = *cur_char;
+            switch (*cur_char)
+            {
+                case '+': tok.type = plussym;
+                    break;
+                case '-': tok.type = minussym;
+                    break;
+                case '*': tok.type = multsym;
+                    break;
+                case '/': tok.type = slashsym;
+                    break;
+                case '(': tok.type = lparentsym;
+                    break;
+                case ')': tok.type = rparentsym;
+                    break;
+                case '.': tok.type = periodsym;
+                    break;
+                case ';': tok.type = semicolonsym;
+                    break;
+                case ',': tok.type = commasym;
+                    break;
+                case '=': tok.type = eqlsym;
+                    break;
+                case '<':
+                {
+                    cur_char++;
+                    if (*cur_char == '>')
+                    {  // '<>' not equal
+                        tok.type = neqsym;
+                        tok.lexeme[strlen(tok.lexeme)] = *cur_char;
+                    }
+                    else if (*cur_char == '=')
+                    { // <= less than or equal
+                        tok.type = leqsym;
+                        tok.lexeme[strlen(tok.lexeme)] = *cur_char;
+                    }
+                    else
+                    {
+                        cur_char--;     // we need to rewind the pointer
+                        tok.type = lessym;
+                    }
+                    break;
+                }
+                case '>':
+                {
+                    cur_char++;
+                    if (*cur_char == '=')
+                    {  // '>=' greater or equal to
+                        tok.type = geqsym;
+                        tok.lexeme[strlen(tok.lexeme)] = *cur_char;
+                    }
+                    else
+                    {
+                        cur_char--;     // reqind character
+                        tok.type = gtrsym;
+                    }
+                    break;
+                }
+                case ':':
+                {
+                    cur_char++;
+                    if (*cur_char == '=')
+                    {      // ':='
+                        tok.type = becomessym;
+                        tok.lexeme[strlen(tok.lexeme)] = *cur_char;
+                    }
+                    else
+                    {
+                        fprintf(stderr, "Invalid symbol\n");
+                        fault_detected = 1;
+                    }
+                    break;
+                }
+                default:
+                {
+                    if (iscntrl(*cur_char) || isspace(*cur_char))
+                    {
+                        if (*cur_char == '\n')
+                        {
+                            line_count++;
+                        }
+                        break;
+                    }
+                    
+                    fprintf(stderr, "Invalid symbol\n");
+                    fault_detected = 1;
+                    break;
+                }
+                    
+            }
+            
+            cur_char++;
+            
+        }
+        
+        if (fault_detected == 1)
+        {
+            fprintf(stderr, "Fault on line %d", line_count);
+            fclose(lexemeList);
+            fclose(lexemeTable);
+            free(string);
+            return;
+        }
+        
+        if (tok.type != 0)
+        {
+            
+            fprintf(lexemeTable, "%-15s %-15d\n", tok.lexeme, tok.type);
+            fprintf(lexemeList, "%d ", tok.type);
+            
+            if( printOption )
+                printf("%d ", tok.type);
+
+            
+            if (tok.type == identsym || tok.type == numbersym)
+            {
+                fprintf(lexemeList, "%s ", tok.lexeme);
+                
+                if( printOption )
+                    printf("%s ", tok.lexeme);
+            }
+            
+        }
     }
-    
-    fclose(lexemeTable);
     fclose(lexemeList);
+    fclose(lexemeTable);
+    
+    free(string);
 }
 
-void freeTable() {
-    int i = 0;
 
-    while ( i < index_symbolTable ) {
-        free(symbol_table[i].name);
-        i++;
-    }
 
-}
-
-int startScanner(int argc, const char * argv[]) {
-    FILE *file = openFile("input.txt");
+/**
+ * Removes all comments within file
+ *
+ * Clears whitespace down to just one space between
+ * either a blank space or newline char
+ *
+ */
+int cleanFile(char *in_file_name)
+{
+    FILE *f = fopen(in_file_name, "rb");
+    fseek(f, 0, SEEK_END);
+    long fsize = ftell(f);
+    fseek(f, 0, SEEK_SET);
     
-    fillSsym();
-
-    char* inputStream = fillInputStream(file);
+    char *string = malloc(fsize + 1);
+    fread(string, fsize, 1, f);
+    fclose(f);
     
-    inputStream = cleanStream(inputStream);
-
-    printCleanInput(inputStream);
-
-    fclose(file);
-
-    tokenizeInput(inputStream);
-
-    printLexemeData();
-
-    freeTable();
+    string[fsize] = 0;
+    
+    //stripExtraSpaces(string);
+    
+    int comments_removed;
+    do
+    {
+        comments_removed = removeComments(string);
+        if (comments_removed == -1)
+        {
+            return -1;
+        }
+        
+    } while (comments_removed == 1);
+    
+    FILE *out = fopen(clean_input_name, "wb");
+    fwrite(string, sizeof(char), strlen(string), out);
+    fclose(out);
+    free(string);
     
     return 0;
+    
+}
+
+/**
+ * Remove white space preserving new line
+ */
+void stripExtraSpaces(char *str)
+{
+    int i, x;
+    int len = strlen(str);
+    for (i = x = 1; i < len; i++)
+    {
+        if (!isspace(str[i]) || str[i] == '\n' || (i > 0 && !isspace(str[i - 1])))
+        {
+            str[x++] = str[i];
+        }
+    }
+    str[x] = '\0';
+}
+
+int removeComments(char *str)
+{
+    char *comment_start, *comment_stop;
+    int flag = 0;
+    
+    char *beg_comment = "/*";
+    char *end_comment = "*/";
+    
+    comment_start = strstr(str, beg_comment);
+    if (comment_start != NULL)
+    {
+        flag = 1;
+        
+        comment_stop = strstr(comment_start, end_comment);
+        if (comment_stop == NULL)
+        {
+            fprintf(stderr, "Invalid use of comment started on line: %d\n", getLine(str, comment_start));
+            return -1;
+        }
+        
+        
+        char *temp_ptr = comment_stop + 2;
+        *comment_start = ' ';
+        *(comment_start + 1) = 0;
+        
+        memmove(comment_start+1, temp_ptr, strlen(temp_ptr) + 1);
+        //  strcat(str, temp_ptr);
+    }
+    
+    return flag;
+}
+
+
+int getLine(char *buffer, char *seek)
+{
+    int lines = 1;
+    while (buffer != 0 && buffer != seek)
+    {
+        if (*buffer == '\n')
+        {
+            lines++;
+        }
+        
+        buffer++;
+    }
+    
+    return lines;
 }

@@ -1,38 +1,27 @@
 //
 //  main.c
 //  0 VM
-//
-//  Created by Darian Smalley on 5/23/15.
-//  Copyright (c) 2015 Darian Smalley. All rights reserved.
-//
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
 
-typedef struct Instruction{
-    int op; /*opcode*/
-    int l; //Lexographical Level
-    int m; //modifier
-    int line_number; //line number
-} IR;
-
 #define MAX_STACK_HEIGHT 100
 #define MAX_CODE_LENGTH 500
 #define MAX_LEXI_LEVELS 4
 
-int CURRENT_CODE_LENGTH;
-const char *opCodes[9] = {"LIT", "OPR", "LOD", "STO", "CAL", "INC","JMP","JPC","SIO"};
-int sp = 0; //stack pointer
-int bp = 1; //base pointer
-int pc = 0; //program counter
-IR ir;      //instruction register
-IR code[MAX_CODE_LENGTH];
-int stack[MAX_STACK_HEIGHT] = {0};
-char stack_str[MAX_STACK_HEIGHT + 100][10]; //string version of stack
-int str_top = 0; //points to the top of the string stack
-int halt = 0;
+static int CURRENT_CODE_LENGTH;
+static const char *opCodes[9] = {"LIT", "OPR", "LOD", "STO", "CAL", "INC","JMP","JPC","SIO"};
+static int sp = 0; //stack pointer
+static int bp = 1; //base pointer
+static int pc = 0; //program counter
+static IR ir;      //instruction register
+static IR code[MAX_CODE_LENGTH];
+static int stack[MAX_STACK_HEIGHT] = {0};
+static char stack_str[MAX_STACK_HEIGHT + 100][10]; //string version of stack
+static int str_top = 0; //points to the top of the string stack
+static int halt = 0;
 
 /*
  *Find base L level down
@@ -209,26 +198,7 @@ void generateInst(IR *inst, char *terms[], int lineNumber) {
     inst->line_number = lineNumber;
 }
 
-char* fillInputStream(FILE* file) {
-    int c;
-    int i = 0;
-    fseek(file, 0, SEEK_END);
-    long fsize = ftell(file);
-    fseek(file, 0, SEEK_SET);
-    
-    char *inputStream = malloc(fsize + 1);
-    
-    while ((c = fgetc(file)) != EOF) {
-        inputStream[i] = c;
-        i++;
-    }
-    
-    inputStream[i] = '\0';
-    
-    return inputStream;
-}
-
-void fillCode (FILE *file) {
+void fillCode (char* fileName) {
     int i = 0;
     char *terms[3] = {0};
     int c = 0;
@@ -236,7 +206,7 @@ void fillCode (FILE *file) {
     int k = 0;
     char *line = malloc ( 8 * sizeof(char));
     
-    char* inputStream = fillInputStream(file);
+    char* inputStream = fillInputStream(fileName);
     size_t size = strlen(inputStream);
     
     for (k = 0; k < size; k++) {
@@ -307,7 +277,6 @@ void printCode(FILE *file) {
     int i;
     
     for (i = 0; i < CURRENT_CODE_LENGTH; i++) {
-//        fprintf(file, "%s\n", "New instruction");
         if ( i < 10)
             fprintf(file, " 0%d   %s  %d  %d\n",i, opCodes[code[i].op - 1], code[i].l, code[i].m);
         else
@@ -430,20 +399,9 @@ void execute() {
 }
 
 int startVM(int argc, const char * argv[]) {
-    
-    FILE *file = fopen("mcode2.txt", "r" );
-    
-    /* fopen returns 0, the NULL pointer, on failure */
-    if ( file == 0 )
-    {
-        printf( "Could not open file\n" );
-        exit(1);
-    }
-    
-    fillCode( file );
-    fclose( file );
+    fillCode( "mcode2.txt" );
 
-    file = fopen("stacktrace.txt","w");
+    FILE* file = fopen("stacktrace.txt","w");
     
     if ( file == NULL) {
         printf("Could not open file\n");
@@ -460,11 +418,8 @@ int startVM(int argc, const char * argv[]) {
 
     //while instruction is not halt
     while ( halt == 0) {
-//        puts("fetch");
         fetch();
-//        puts("execute");
         execute();
-//        puts("printInstructionTrace");
         printInstructionTrace(file);
     }
     

@@ -1,19 +1,14 @@
 //
 //  parser.c
 //  0 VM
-//
-//  Created by Darian Smalley on 6/29/15.
-//  Copyright (c) 2015 Darian Smalley. All rights reserved.
-//
-
-#include <stdio.h>
-#include <stdlib.h>
-#include <ctype.h>
-#include <string.h>
 #include "parser.h"
 
-char* lexemeList = 0;
-int TOKEN = 0;
+static char* lexemeList = 0;
+static int TOKEN = 0;
+static symbol symbol_table[MAX_SYMBOL_TABLE_SIZE];
+static int tableSize = 0;
+static int mod = 0;
+static int lvl = 0;
 
 typedef enum {
     nulsym = 1, identsym = 2, numbersym = 3, plussym = 4, minussym = 5,
@@ -24,11 +19,11 @@ typedef enum {
     readsym = 32, elsesym = 33
 } token_type;
 
-int startParser (char* fileName) {
-    lexemeList = fillInputStream(fileName);
+int startParser (int printToConsole) {
+    lexemeList = fillInputStream("lexemeList.txt");
     
     PROGRAM();
-    
+    //TODO: check print option to print intermediate code to console.
     return 0;
 }
 
@@ -43,7 +38,10 @@ void PROGRAM() {
 
 void BLOCK() {
     if( TOKEN == constsym) {
-        while( TOKEN != commasym ) {
+        do {
+            symbol *sym = malloc(sizeof(symbol));
+            sym->kind = constsym;
+            
             //get next token
             getToken();
             
@@ -52,24 +50,49 @@ void BLOCK() {
                 exit(1);
             }
             
+            //get next token as char* instead of int because it is a symbol name
+            char* input = strsep(&lexemeList, " ");
+            memcpy(sym->name, input, strlen(input)+1);
+            
             getToken();
             
             if (TOKEN != eqlsym) {
-                puts("error 3: expected equals symbol.");
+                puts("error 3: expected equals '=' symbol.");
                 exit(1);
             }
             
             getToken();
             
             if (TOKEN != numbersym) {
-                puts("error 2: '=' equal sym must be followed by a number.");
+                puts("error 2: expected number symbol.");
                 exit(1);
             }
+            getToken();
+            
+            sym->val = TOKEN;
+            symbol_table[tableSize] = *sym;
+            tableSize++;
+            
+            addIRtoCode(01, 0, sym->val);
+            
+            getToken();
+            
+            mod++;
+        } while( TOKEN == commasym );
+        
+        if ( TOKEN != semicolonsym) {
+            puts("error 5: expected semicolon symbol after const sym.");
+            exit(1);
         }
+        
+        getToken();
     }
     
     if (TOKEN == varsym) {
-        while( TOKEN != commasym) {
+        do {
+            symbol *sym = malloc(sizeof(symbol));
+            sym->kind = varsym;
+            
             getToken();
             
             if( TOKEN != identsym ) {
@@ -77,11 +100,21 @@ void BLOCK() {
                 exit(1);
             }
             
+            char* input = strsep(&lexemeList, " ");
+            memcpy(sym->name, input, strlen(input)+1);
+            
+            sym->level = lvl;
+            sym->addr = mod;
+            
+            symbol_table[tableSize] = *sym;
+            tableSize++;
+            
             getToken();
-        }
+            mod++;
+        } while( TOKEN == commasym);
         
         if (TOKEN != semicolonsym) {
-            puts("error 5: expected semicolon symbol.");
+            puts("error 5: expected semicolon symbol after var sym.");
             exit(1);
         }
         
@@ -89,6 +122,9 @@ void BLOCK() {
     }
     
     while (TOKEN == procsym) {
+        symbol *sym = malloc(sizeof(symbol));
+        sym->kind = procsym;
+        
         getToken();
         
         if (TOKEN != identsym) {
@@ -96,19 +132,28 @@ void BLOCK() {
             exit(1);
         }
         
+        char* input = strsep(&lexemeList, " ");
+        memcpy(sym->name, input, strlen(input)+1);
+        
         getToken();
         
         if (TOKEN != semicolonsym) {
-            puts("error 5: expected semicolon symbol");
+            puts("error 5: expected semicolon symbol after proc sym");
             exit(1);
         }
+        
+        sym->level = lvl;
+        sym->addr = mod;
+        
+        lvl++;
+        mod = 0;
         
         getToken();
         
         BLOCK();
         
         if (TOKEN != semicolonsym) {
-            puts("error 5: expected semicolon symbol.");
+            puts("error 5: expected semicolon symbol after block.");
             exit(1);
         }
     }
@@ -117,11 +162,27 @@ void BLOCK() {
 
 void STATEMENT() {
     if ( TOKEN == identsym) {
+        char* tokenName = strsep(&lexemeList, " ");
+        checkIdentSym(tokenName);
+        
+        symbol sym = symbol_table[searchTable(tokenName)];
+        
+        if( sym.kind == constsym || sym.kind == procsym ) {
+            puts("error 12: assignment to constant or procedure is not allowed.");
+            exit(1);
+        }
+        
         getToken();
         
         if (TOKEN != becomessym) {
-            puts("error: expected become symbol.");
-            exit(1);
+            if( TOKEN == eqlsym) {
+                puts("error 1: found equals '=', expected becomes ':='.");
+                exit(1);
+            }
+            else {
+                puts("error: expected becomes symbol.");
+                exit(1);
+            }
         }
         
         getToken();
@@ -133,6 +194,15 @@ void STATEMENT() {
         
         if ( TOKEN != identsym) {
             puts("error 14: call must be followed by an identifier.");
+            exit(1);
+        }
+        
+        char* tokenName = strsep(&lexemeList, " ");
+        checkIdentSym(tokenName);
+        int index = searchTable(tokenName);
+        
+        if ( symbol_table[index].kind == constsym || symbol_table[index].kind == varsym) {
+            puts("error 15: call of a constant or variable is meaningless.");
             exit(1);
         }
         
@@ -149,7 +219,7 @@ void STATEMENT() {
         }
         
         if ( TOKEN != endsym) {
-            puts("error: expected end symbol.");
+            puts("error 10: semicolon between statements missing.");
             exit(1);
         }
         
@@ -181,6 +251,32 @@ void STATEMENT() {
         
         STATEMENT();
     }
+    else if( TOKEN == readsym ) {
+        getToken();
+        
+        if ( TOKEN != identsym) {
+            puts("error 14: call must be followed by an identifier.");
+            exit(1);
+        }
+        
+        char* tokenName = strsep(&lexemeList, " ");
+        checkIdentSym(tokenName);
+        
+        getToken();
+    }
+    else if (TOKEN == writesym ) {
+        getToken();
+        
+        if ( TOKEN != identsym) {
+            puts("error 14: call must be followed by an identifier.");
+            exit(1);
+        }
+        
+        char* tokenName = strsep(&lexemeList, " ");
+        checkIdentSym(tokenName);
+        
+        getToken();
+    }
 }
 
 void CONDITION() {
@@ -191,7 +287,7 @@ void CONDITION() {
     else {
         EXPRESSION();
         
-        if (TOKEN != eqlsym  || TOKEN != nulsym /*<---- this is incorrect and needs to be fixed*/ || TOKEN != lessym || TOKEN != leqsym || TOKEN != gtrsym || TOKEN != geqsym) {
+        if (TOKEN != eqlsym  || TOKEN != neqsym || TOKEN != lessym || TOKEN != leqsym || TOKEN != gtrsym || TOKEN != geqsym) {
             puts("error 20: expected relational operatior.");
             exit(1);
         }
@@ -207,6 +303,8 @@ void EXPRESSION() {
         getToken();
         TERM();
     }
+    
+    TERM();
     
     while (TOKEN == plussym || TOKEN == minussym ) {
         getToken();
@@ -225,9 +323,21 @@ void TERM() {
 
 void FACTOR() {
     if ( TOKEN == identsym ) {
+        char* tokenName = strsep(&lexemeList, " ");
+        checkIdentSym(tokenName);
+        
+        if ( symbol_table[searchTable(tokenName)].kind == procsym) {
+            puts("error 21: Expression must not contain a procedure identifier.");
+            exit(1);
+        }
+        
         getToken();
     }
     else if ( TOKEN == numbersym) {
+        getToken();
+        //calling get token a second time to move past the actual number
+        //this is where numbers with arithmatic will be manipulated
+        //DONT FORGET
         getToken();
     }
     else if (TOKEN == lparentsym) {
@@ -242,40 +352,42 @@ void FACTOR() {
     }
 }
 
-FILE* openFile(char* fileName) {
-    FILE* file;
-    
-    if (!(file = fopen(fileName, "r" ))) {
-        perror("input.txt");
-        exit(1);
-    }
-    
-    return file;
-}
-
-char* fillInputStream(char* fileName) {
-    FILE *file = openFile(fileName);
-    int c;
-    int i = 0;
-    fseek(file, 0, SEEK_END);
-    long fsize = ftell(file);
-    fseek(file, 0, SEEK_SET);
-    
-    char *inputStream = malloc(fsize + 1);
-    
-    while ((c = fgetc(file)) != EOF) {
-        inputStream[i] = c;
-        i++;
-    }
-    
-    fclose(file);
-    
-    inputStream[i] = '\0';
-    
-    return inputStream;
-}
-
 void getToken() {
     char* input = strsep(&lexemeList, " ");
     TOKEN = atoi(input);
+}
+
+int searchTable(char* name) {
+    int i = 0;
+    
+    for( i = 0; i < tableSize; i++) {
+        if ( strcmp (name, symbol_table[i].name) == 0 )
+            return i;
+    }
+    
+    return -1;
+}
+
+bool isDefined(char* token) {
+    if( searchTable(token) == -1 ) {
+        return false;
+    }
+    else
+        return true;
+}
+
+void checkIdentSym(char* name) {
+    
+    if ( !isDefined(name) ) {
+        printf("error 11: Undeclared identifier '%s'\n", name);
+        exit(1);
+    }
+}
+
+void printSymbolTable() {
+    int i = 0;
+    for ( i = 0; i < tableSize; i++) {
+        printf("%s ", symbol_table[i].name);
+    }
+    puts("");
 }
