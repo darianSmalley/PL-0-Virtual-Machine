@@ -19,12 +19,37 @@ typedef enum {
     readsym = 32, elsesym = 33
 } token_type;
 
+typedef enum {
+    LIT = 1, OPR = 2, LOD = 3, STO = 4, CAL = 5, INC = 6, JMP = 7, JPC = 8, SIO = 9
+} ISA;
+
+typedef enum {
+    OPR_RET = 0, OPR_NEG = 1, OPR_ADD = 2, OPR_SUB = 3, OPR_MUL = 4, OPR_DIV = 5, OPR_ODD = 6, OPR_MOD = 7, OPR_EQL = 8, OPR_NEQ = 9, OPR_LSS = 10, OPR_LEQ = 11, OPR_GTR = 12, OPR_GEQ = 13
+} arith_opr;
+
+static IR codeTable[MAX_CODE_LENGTH] = {0};
+static int cx = 0;
+
 int startParser (int printToConsole) {
     lexemeList = fillInputStream("lexemeList.txt");
     
     PROGRAM();
     //TODO: check print option to print intermediate code to console.
     return 0;
+}
+
+void emit(int op, int l, int m) {
+    
+    if( cx > MAX_CODE_LENGTH) {
+        puts("error: code index excedded MAX_CODE_LENGTH");
+        exit(1);
+    }
+    else {
+        codeTable[cx].op = op;
+        codeTable[cx].l = l;
+        codeTable[cx].m = m;
+        cx++;
+    }
 }
 
 void PROGRAM() {
@@ -34,6 +59,7 @@ void PROGRAM() {
         puts("error 9: expected period symbol.");
         exit(1);
     }
+    emit(SIO, 0, 2); //halt
 }
 
 void BLOCK() {
@@ -73,11 +99,7 @@ void BLOCK() {
             symbol_table[tableSize] = *sym;
             tableSize++;
             
-            addIRtoCode(01, 0, sym->val);
-            
             getToken();
-            
-            mod++;
         } while( TOKEN == commasym );
         
         if ( TOKEN != semicolonsym) {
@@ -108,6 +130,8 @@ void BLOCK() {
             
             symbol_table[tableSize] = *sym;
             tableSize++;
+            
+            emit(INC, 0, 1);
             
             getToken();
             mod++;
@@ -156,6 +180,8 @@ void BLOCK() {
             puts("error 5: expected semicolon symbol after block.");
             exit(1);
         }
+        
+        lvl--;
     }
     STATEMENT();
 }
@@ -185,9 +211,13 @@ void STATEMENT() {
             }
         }
         
+        //TODO: TEST
+        
         getToken();
         
         EXPRESSION();
+        
+        emit(STO, lvl - sym.level, sym.addr);
     }
     else if (TOKEN == callsym) {
         getToken();
@@ -205,6 +235,7 @@ void STATEMENT() {
             puts("error 15: call of a constant or variable is meaningless.");
             exit(1);
         }
+        //TODO: emit unconditional jump to appropriate program counter or code index
         
         getToken();
     }
@@ -237,10 +268,20 @@ void STATEMENT() {
         
         getToken();
         
+        int tmp = cx;
+        emit(JPC, 0, 0);
+        
         STATEMENT();
+        
+        codeTable[tmp].m = cx;
     }
     else if (TOKEN == whilesym ) {
+        int cx1 = cx;
         getToken();
+        CONDITION();
+        
+        int cx2 = cx;
+        emit(JPC, 0,0);
         
         if ( TOKEN != dosym) {
             puts("error 17: expected do symbol.");
@@ -250,6 +291,8 @@ void STATEMENT() {
         getToken();
         
         STATEMENT();
+        emit(JMP, 0,cx1);
+        codeTable[cx2].m = cx;
     }
     else if( TOKEN == readsym ) {
         getToken();
@@ -286,38 +329,84 @@ void CONDITION() {
     }
     else {
         EXPRESSION();
+        //relevent val will be at the top of stack at this point
         
-        if (TOKEN != eqlsym  || TOKEN != neqsym || TOKEN != lessym || TOKEN != leqsym || TOKEN != gtrsym || TOKEN != geqsym) {
-            puts("error 20: expected relational operatior.");
-            exit(1);
+//        if (TOKEN != eqlsym  || TOKEN != neqsym || TOKEN != lessym || TOKEN != leqsym || TOKEN != gtrsym || TOKEN != geqsym) {
+//            puts("error 20: expected relational operatior.");
+//            exit(1);
+//        }
+        int relop = 0;
+        
+        switch (TOKEN) {
+            case eqlsym:
+                relop = OPR_EQL;
+                break;
+            case neqsym:
+                relop = OPR_NEQ;
+                break;
+            case lessym:
+                relop = OPR_LSS;
+                break;
+            case leqsym:
+                relop = OPR_LEQ;
+                break;
+            case gtrsym:
+                relop = OPR_GTR;
+                break;
+            case geqsym:
+                relop = OPR_GEQ;
+                break;
+            default:
+                puts("error 20: expected relational operatior.");
+                exit(1);
         }
         
         getToken();
         
         EXPRESSION();
+        
+        //top two stack elements are relevent values for comparison
+        //stack arithmetic operation emit here, if top of stack == 0, JPC will execute, otherwise it wont
+        emit(OPR, 0, relop);
     }
 }
 
 void EXPRESSION() {
+    int addop;
+    
     if (TOKEN == plussym || TOKEN == minussym ) {
+        addop = TOKEN;
         getToken();
         TERM();
+        if(addop == minussym)
+            emit(OPR, 0, OPR_NEG); //negate
     }
-    
-    TERM();
+    else
+        TERM();
     
     while (TOKEN == plussym || TOKEN == minussym ) {
+        addop = TOKEN;
         getToken();
         TERM();
+        if ( addop == plussym)
+            emit(OPR, 0, OPR_ADD); //addition
+        else
+            emit(OPR, 0, OPR_SUB); //subtraction
     }
 }
 
 void TERM() {
+    int mulop;
     FACTOR();
     
     while (TOKEN == multsym || TOKEN == slashsym) {
+        mulop = TOKEN;
         getToken();
         FACTOR();
+        if( mulop == multsym)
+            emit(OPR, 0, OPR_MUL); //multiplication
+        else
+            emit(OPR, 0, OPR_DIV); //division
     }
 }
 
@@ -326,18 +415,24 @@ void FACTOR() {
         char* tokenName = strsep(&lexemeList, " ");
         checkIdentSym(tokenName);
         
-        if ( symbol_table[searchTable(tokenName)].kind == procsym) {
+        symbol sym = symbol_table[searchTable(tokenName)];
+        
+        if ( sym.kind == procsym) {
             puts("error 21: Expression must not contain a procedure identifier.");
             exit(1);
         }
+        //load identifer value to top of stack
+        if ( sym.kind == varsym)
+            emit(LOD, lvl - sym.level, sym.addr);
+        else if (sym.kind == constsym)
+            emit(LIT, 0, sym.val);
         
-        getToken();
+       getToken();
     }
     else if ( TOKEN == numbersym) {
         getToken();
-        //calling get token a second time to move past the actual number
-        //this is where numbers with arithmatic will be manipulated
-        //DONT FORGET
+        //push number value to top of stack
+        emit(LIT, 0, TOKEN);
         getToken();
     }
     else if (TOKEN == lparentsym) {
