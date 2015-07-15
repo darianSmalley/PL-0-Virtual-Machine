@@ -39,5 +39,5 @@ int main(int argc, const char * argv[]) {
         puts("No errors, program is syntactically correct.");
     }
     
-    //startVM();
+    startVM();
 }

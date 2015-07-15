@@ -16,7 +16,6 @@
 #include "parser.c"
 #include "scanner.c"
 #include "vm.c"
-#include "interpreter.c"
 
 int main(int argc, const char * argv[]);
 #endif /* defined(____VM__driver__) */

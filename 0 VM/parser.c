@@ -7,8 +7,11 @@ static char* lexemeList = 0;
 static int TOKEN = 0;
 static symbol symbol_table[MAX_SYMBOL_TABLE_SIZE];
 static int tableSize = 0;
-static int mod = 0;
+static int mod = 4; //mod starts at 4
 static int lvl = 0;
+
+static IR codeTable[MAX_CODE_LENGTH] = {0};
+static int codeSize = 0;
 
 typedef enum {
     nulsym = 1, identsym = 2, numbersym = 3, plussym = 4, minussym = 5,
@@ -27,28 +30,32 @@ typedef enum {
     OPR_RET = 0, OPR_NEG = 1, OPR_ADD = 2, OPR_SUB = 3, OPR_MUL = 4, OPR_DIV = 5, OPR_ODD = 6, OPR_MOD = 7, OPR_EQL = 8, OPR_NEQ = 9, OPR_LSS = 10, OPR_LEQ = 11, OPR_GTR = 12, OPR_GEQ = 13
 } arith_opr;
 
-static IR codeTable[MAX_CODE_LENGTH] = {0};
-static int cx = 0;
 
 int startParser (int printToConsole) {
     lexemeList = fillInputStream("lexemeList.txt");
-    
     PROGRAM();
-    //TODO: check print option to print intermediate code to console.
+    printCodeTable(printToConsole);
     return 0;
 }
 
 void emit(int op, int l, int m) {
     
-    if( cx > MAX_CODE_LENGTH) {
+    if( codeSize > MAX_CODE_LENGTH) {
         puts("error: code index excedded MAX_CODE_LENGTH");
         exit(1);
     }
     else {
-        codeTable[cx].op = op;
-        codeTable[cx].l = l;
-        codeTable[cx].m = m;
-        cx++;
+        if(op == INC && codeSize >= 1 && codeTable[codeSize - 1].op == INC)
+        {
+            codeTable[codeSize - 1].m += m;
+        }
+        else {
+            codeTable[codeSize].op = op;
+            codeTable[codeSize].l = l;
+            codeTable[codeSize].m = m;
+            codeSize++;
+        }
+        
     }
 }
 
@@ -63,6 +70,7 @@ void PROGRAM() {
 }
 
 void BLOCK() {
+    emit(6, 0, 4);
     if( TOKEN == constsym) {
         do {
             symbol *sym = malloc(sizeof(symbol));
@@ -127,6 +135,7 @@ void BLOCK() {
             
             sym->level = lvl;
             sym->addr = mod;
+            mod++;
             
             symbol_table[tableSize] = *sym;
             tableSize++;
@@ -134,7 +143,7 @@ void BLOCK() {
             emit(INC, 0, 1);
             
             getToken();
-            mod++;
+            
         } while( TOKEN == commasym);
         
         if (TOKEN != semicolonsym) {
@@ -211,8 +220,6 @@ void STATEMENT() {
             }
         }
         
-        //TODO: TEST
-        
         getToken();
         
         EXPRESSION();
@@ -243,7 +250,6 @@ void STATEMENT() {
         getToken();
         
         STATEMENT();
-        
         while (TOKEN == semicolonsym ) {
             getToken();
             STATEMENT();
@@ -268,19 +274,33 @@ void STATEMENT() {
         
         getToken();
         
-        int tmp = cx;
+        int tmp = codeSize;
         emit(JPC, 0, 0);
         
         STATEMENT();
+//        getToken(); else needs this
         
-        codeTable[tmp].m = cx;
+        codeTable[tmp].m = codeSize;
+        
+        printf("TOKEN =  %d\n",TOKEN);
+        if (TOKEN == elsesym) {
+            puts("else sym found");
+            
+            int tmp2 = codeSize;
+            emit(JMP, 0, 0);
+            
+            getToken();
+            STATEMENT();
+            
+            codeTable[tmp2].m = codeSize;
+        }
     }
     else if (TOKEN == whilesym ) {
-        int cx1 = cx;
+        int cx1 = codeSize;
         getToken();
         CONDITION();
         
-        int cx2 = cx;
+        int cx2 = codeSize;
         emit(JPC, 0,0);
         
         if ( TOKEN != dosym) {
@@ -292,9 +312,10 @@ void STATEMENT() {
         
         STATEMENT();
         emit(JMP, 0,cx1);
-        codeTable[cx2].m = cx;
+        codeTable[cx2].m = codeSize;
     }
     else if( TOKEN == readsym ) {
+        printf("%d", TOKEN);
         getToken();
         
         if ( TOKEN != identsym) {
@@ -304,6 +325,11 @@ void STATEMENT() {
         
         char* tokenName = strsep(&lexemeList, " ");
         checkIdentSym(tokenName);
+
+        symbol sym = symbol_table[searchTable(tokenName)];
+        
+        emit(9, 0, 1);
+        emit(4, sym.level, sym.addr);
         
         getToken();
     }
@@ -318,6 +344,10 @@ void STATEMENT() {
         char* tokenName = strsep(&lexemeList, " ");
         checkIdentSym(tokenName);
         
+        symbol sym = symbol_table[searchTable(tokenName)];
+        
+        emit(3, lvl-sym.level, sym.addr);
+        emit(9, 0, 0);
         getToken();
     }
 }
@@ -485,4 +515,22 @@ void printSymbolTable() {
         printf("%s ", symbol_table[i].name);
     }
     puts("");
+}
+
+void printCodeTable(int printOption) {
+    FILE* file = fopen("mcode.txt", "w");
+    int i;
+    
+    if (printOption) {
+        printf("Printing Intermediate Code to Console...");
+    }
+    
+    for (i = 0; i < codeSize; i++) {
+        fprintf(file, "%d %d %d\n", codeTable[i].op, codeTable[i].l, codeTable[i].m);
+        if (printOption) {
+            printf("%d %d %d\n", codeTable[i].op, codeTable[i].l, codeTable[i].m);
+        }
+    }
+    
+    fclose(file);
 }

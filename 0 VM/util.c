@@ -12,7 +12,7 @@ FILE* openFile(char* fileName) {
     FILE* file;
     
     if (!(file = fopen(fileName, "r" ))) {
-        perror("input.txt");
+        perror(fileName);
         exit(1);
     }
     
@@ -37,6 +37,5 @@ char* fillInputStream(char* fileName) {
     fclose(file);
     
     inputStream[i] = '\0';
-    
     return inputStream;
 }

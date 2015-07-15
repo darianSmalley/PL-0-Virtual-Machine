@@ -15,9 +15,9 @@
 #include <string.h>
 #include <stdbool.h>
 #include "util.h"
-#include "interpreter.h"
 
 #define MAX_SYMBOL_TABLE_SIZE 100
+#define MAX_CODE_LENGTH 500
 
 typedef struct symbol {
     int kind;
@@ -41,6 +41,8 @@ void checkIdentSym();
 int searchTable(char* name);
 bool isDefined(char* token);
 void printSymbolTable();
+void printCodeTable(int printOption);
+void emit(int op, int l, int m);
 
 //Parser Operation
 void PROGRAM();

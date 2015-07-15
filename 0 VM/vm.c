@@ -175,7 +175,9 @@ void op09_SIO (int l, int m) {
     //read input from user and push it
     else if ( m == 1) {
         sp = sp + 1;
-        //read value and store it in stack.data[sp]
+        //read value and push to top of stack
+        scanf("%d", &stack[sp]);
+        
     }
     //halt
     else { //m == 2
@@ -208,7 +210,7 @@ void fillCode (char* fileName) {
     
     char* inputStream = fillInputStream(fileName);
     size_t size = strlen(inputStream);
-    
+
     for (k = 0; k < size; k++) {
         c = inputStream[k];
         
@@ -398,9 +400,9 @@ void execute() {
     updateStack_str();
 }
 
-int startVM(int argc, const char * argv[]) {
-    fillCode( "mcode2.txt" );
-
+int startVM() {
+    fillCode( "mcode.txt" );
+    
     FILE* file = fopen("stacktrace.txt","w");
     
     if ( file == NULL) {
