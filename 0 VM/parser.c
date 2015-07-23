@@ -8,7 +8,7 @@ static int TOKEN = 0;
 static symbol symbol_table[MAX_SYMBOL_TABLE_SIZE];
 static int tableSize = 0;
 static int mod = 4; //mod starts at 4
-static int lvl = 0;
+static int lvl = 0; //how many lexical levels or AR's "up" we are from 0
 
 static IR codeTable[MAX_CODE_LENGTH] = {0};
 static int codeSize = 0;
@@ -60,6 +60,7 @@ void emit(int op, int l, int m) {
 }
 
 void PROGRAM() {
+    emit(JMP, 0, 0); //unconditional jump to main()
     getToken();
     BLOCK();
     if (TOKEN != periodsym) {
@@ -175,13 +176,10 @@ void BLOCK() {
             exit(1);
         }
         
-        sym->level = lvl;
-        sym->addr = mod;
-        
-        lvl++;
-        mod = 0;
-        
         getToken();
+        
+        sym->level = lvl;
+        sym->addr = codeSize;
         
         BLOCK();
         
@@ -190,8 +188,8 @@ void BLOCK() {
             exit(1);
         }
         
-        lvl--;
     }
+    codeTable[0].m = codeSize; //setting pc for jump to main
     STATEMENT();
 }
 
@@ -236,13 +234,17 @@ void STATEMENT() {
         
         char* tokenName = strsep(&lexemeList, " ");
         checkIdentSym(tokenName);
-        int index = searchTable(tokenName);
+        symbol sym = symbol_table[searchTable(tokenName)];
         
-        if ( symbol_table[index].kind == constsym || symbol_table[index].kind == varsym) {
+        if ( sym.kind == constsym || sym.kind == varsym) {
             puts("error 15: call of a constant or variable is meaningless.");
             exit(1);
         }
+        
+        lvl++;
+        mod = 0;
         //TODO: emit unconditional jump to appropriate program counter or code index
+        emit(JMP, lvl - sym.level, sym.addr);
         
         getToken();
     }
@@ -255,9 +257,17 @@ void STATEMENT() {
             STATEMENT();
         }
         
+//        printf("Statment.begin->after while statement: TOKEN = %d", TOKEN);
+        
         if ( TOKEN != endsym) {
             puts("error 10: semicolon between statements missing.");
             exit(1);
+        }
+        
+        //checking to see if contorl is in main, if not, return from procedure
+        if ( lvl > 0 ) {
+            emit(OPR, 0, OPR_RET);
+            lvl--;
         }
         
         getToken();
@@ -278,13 +288,12 @@ void STATEMENT() {
         emit(JPC, 0, 0);
         
         STATEMENT();
-//        getToken(); else needs this
+        getToken(); //else needs this
         
-        codeTable[tmp].m = codeSize;
+        codeTable[tmp].m = codeSize + 1; //offset to jump beyond the unconditional jump emitted below for else functionality
         
-        printf("TOKEN =  %d\n",TOKEN);
         if (TOKEN == elsesym) {
-            puts("else sym found");
+//            puts("else sym found");
             
             int tmp2 = codeSize;
             emit(JMP, 0, 0);
@@ -361,10 +370,6 @@ void CONDITION() {
         EXPRESSION();
         //relevent val will be at the top of stack at this point
         
-//        if (TOKEN != eqlsym  || TOKEN != neqsym || TOKEN != lessym || TOKEN != leqsym || TOKEN != gtrsym || TOKEN != geqsym) {
-//            puts("error 20: expected relational operatior.");
-//            exit(1);
-//        }
         int relop = 0;
         
         switch (TOKEN) {
