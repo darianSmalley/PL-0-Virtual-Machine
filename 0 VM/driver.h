@@ -12,10 +12,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "util.c"
-#include "parser.c"
-#include "scanner.c"
-#include "vm.c"
+#include "util.h"
+#include "parser.h"
+#include "scanner.h"
+#include "vm.h"
 
 int main(int argc, const char * argv[]);
 #endif /* defined(____VM__driver__) */

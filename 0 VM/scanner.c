@@ -1,40 +1,10 @@
-#include <stdio.h>
-#include <string.h>
-#include <ctype.h>
-#include <stdlib.h>
+#include "scanner.h"
 
 char *source_file_name = "input.txt";
 char *clean_input_name = "cleaninput.txt";
 
 #define MAX_IDENTIFIER_LENGTH 11
 #define MAX_NUMBER_LENGTH 5
-
-//Prototypes
-int cleanFile(char *in_file_name);
-
-void stripExtraSpaces(char *str);
-
-int removeComments(char *str);
-
-int getLine(char *buffer, char *seek);
-
-void lexicalParser(char *in_file_name, int printOption);
-
-
-// DFA
-//typedef enum {
-//    nulsym = 1, identsym, numbersym, plussym, minussym,
-//    multsym, slashsym, oddsym, eqsym, neqsym, lessym, leqsym,
-//    gtrsym, geqsym, lparentsym, rparentsym, commasym, semicolonsym,
-//    periodsym, becomessym, beginsym, endsym, ifsym, thensym,
-//    whilesym, dosym, callsym, constsym, varsym, procsym, writesym,
-//    readsym, elsesym
-//} token_type;
-
-struct {
-    token_type type;
-    char lexeme[12];
-} typedef token;
 
 int startScanner(int printOption)
 {

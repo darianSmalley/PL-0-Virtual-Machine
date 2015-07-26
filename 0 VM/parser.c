@@ -8,7 +8,7 @@ static int TOKEN = 0;
 static symbol symbol_table[MAX_SYMBOL_TABLE_SIZE];
 static int tableSize = 0;
 static int mod = 4; //mod starts at 4
-static int lvl = 0; //how many lexical levels or AR's "up" we are from 0
+static int lvl = -1; //how many lexical levels or AR's "up" we are from 0
 
 static IR codeTable[MAX_CODE_LENGTH] = {0};
 static int codeSize = 0;
@@ -60,7 +60,6 @@ void emit(int op, int l, int m) {
 }
 
 void PROGRAM() {
-    emit(JMP, 0, 0); //unconditional jump to main()
     getToken();
     BLOCK();
     if (TOKEN != periodsym) {
@@ -72,6 +71,10 @@ void PROGRAM() {
 
 void BLOCK() {
     emit(6, 0, 4);
+    int previous_mod = mod;
+    lvl++;
+    mod = 4;
+    
     if( TOKEN == constsym) {
         do {
             symbol *sym = malloc(sizeof(symbol));
@@ -141,8 +144,6 @@ void BLOCK() {
             symbol_table[tableSize] = *sym;
             tableSize++;
             
-            emit(INC, 0, 1);
-            
             getToken();
             
         } while( TOKEN == commasym);
@@ -156,6 +157,9 @@ void BLOCK() {
     }
     
     while (TOKEN == procsym) {
+        int tmpc = codeSize;
+        emit(JMP, 0, 0);
+        
         symbol *sym = malloc(sizeof(symbol));
         sym->kind = procsym;
         
@@ -176,21 +180,34 @@ void BLOCK() {
             exit(1);
         }
         
-        getToken();
-        
         sym->level = lvl;
         sym->addr = codeSize;
         
-        BLOCK();
+        symbol_table[tableSize] = *sym;
+        tableSize++;
         
+        getToken();
+        
+        BLOCK();
+
         if (TOKEN != semicolonsym) {
-            puts("error 5: expected semicolon symbol after block.");
+            puts("error : expected semicolon symbol after proc declaration.");
             exit(1);
         }
         
+        getToken();
+        
+        emit(OPR, 0, OPR_RET);
+        codeTable[tmpc].m = codeSize; //creates undonditional jump past procedure code to reach main. Upon proc call, the JMP command is bypassed
+        
     }
-    codeTable[0].m = codeSize; //setting pc for jump to main
+    
+    emit(INC, 0, mod);
     STATEMENT();
+    
+    lvl--;
+    mod = previous_mod;
+
 }
 
 void STATEMENT() {
@@ -240,11 +257,8 @@ void STATEMENT() {
             puts("error 15: call of a constant or variable is meaningless.");
             exit(1);
         }
-        
-        lvl++;
-        mod = 0;
-        //TODO: emit unconditional jump to appropriate program counter or code index
-        emit(JMP, lvl - sym.level, sym.addr);
+ 
+        emit(CAL, lvl - sym.level, sym.addr);
         
         getToken();
     }
@@ -257,17 +271,11 @@ void STATEMENT() {
             STATEMENT();
         }
         
-//        printf("Statment.begin->after while statement: TOKEN = %d", TOKEN);
+//        printf("Statment.begin->after while statement: TOKEN = %d\n", TOKEN);
         
-        if ( TOKEN != endsym) {
+        if ( TOKEN != endsym) { 
             puts("error 10: semicolon between statements missing.");
             exit(1);
-        }
-        
-        //checking to see if contorl is in main, if not, return from procedure
-        if ( lvl > 0 ) {
-            emit(OPR, 0, OPR_RET);
-            lvl--;
         }
         
         getToken();
@@ -288,19 +296,15 @@ void STATEMENT() {
         emit(JPC, 0, 0);
         
         STATEMENT();
-        getToken(); //else needs this
-        
+
         codeTable[tmp].m = codeSize + 1; //offset to jump beyond the unconditional jump emitted below for else functionality
         
+        //at this point TOKEN will either  be else or ;
         if (TOKEN == elsesym) {
-//            puts("else sym found");
-            
             int tmp2 = codeSize;
             emit(JMP, 0, 0);
-            
             getToken();
             STATEMENT();
-            
             codeTable[tmp2].m = codeSize;
         }
     }

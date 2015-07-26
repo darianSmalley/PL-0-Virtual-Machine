@@ -1,11 +1,7 @@
 //
 //  main.c
 //  0 VM
-
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <ctype.h>
+#include "vm.h"
 
 #define MAX_STACK_HEIGHT 100
 #define MAX_CODE_LENGTH 500
